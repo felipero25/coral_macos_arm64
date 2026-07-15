@@ -22,6 +22,9 @@ DELEGATE = os.path.join(_HERE, "dist", "libedgetpu.1.dylib")
 MODEL = os.path.join(_HERE, "testdata",
                      "ssd_mobilenet_v2_coco_quant_postprocess_edgetpu.tflite")
 LABELS = os.path.join(_HERE, "testdata", "coco_labels.txt")
+FACE_MODEL = os.path.join(_HERE, "testdata",
+                          "ssd_mobilenet_v2_face_quant_postprocess_edgetpu.tflite")
+FACE_LABELS = os.path.join(_HERE, "testdata", "face_labels.txt")
 
 
 def load_labels(path):
@@ -116,8 +119,10 @@ def draw(frame_bgr, boxes, classes, scores, labels, threshold):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--model", default=MODEL)
-    ap.add_argument("--labels", default=LABELS)
+    ap.add_argument("--faces", action="store_true",
+                    help="usar el modelo de detección de caras en vez de COCO")
+    ap.add_argument("--model", default=None)
+    ap.add_argument("--labels", default=None)
     ap.add_argument("--delegate", default=DELEGATE)
     ap.add_argument("--camera", type=int, default=0, help="índice de cámara")
     ap.add_argument("--input", help="imagen para modo prueba (sin cámara)")
@@ -126,8 +131,12 @@ def main():
     ap.add_argument("--threshold", type=float, default=0.4)
     args = ap.parse_args()
 
-    labels = load_labels(args.labels)
-    interp = make_interpreter(args.model, args.delegate)
+    # Presets: --faces cambia modelo+labels; si no, COCO por defecto.
+    model = args.model or (FACE_MODEL if args.faces else MODEL)
+    label_path = args.labels or (FACE_LABELS if args.faces else LABELS)
+
+    labels = load_labels(label_path)
+    interp = make_interpreter(model, args.delegate)
     _, ih, iw, _ = interp.get_input_details()[0]["shape"]
     omap = get_output_map(interp)
     print(f"[*] input {iw}x{ih} | tensores salida (boxes,classes,scores,count)={omap}")

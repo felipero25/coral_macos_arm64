@@ -86,11 +86,15 @@ Si todas las inferencias tardan igual, está corriendo en CPU (no cuenta).
 COCO) sobre el Edge TPU y la webcam.
 
 ```bash
-# En vivo (pulsa 'q' para salir):
+# Objetos (80 clases COCO) en vivo — pulsa 'q' para salir:
 python detect_camera.py
+
+# Caras en vivo:
+python detect_camera.py --faces
 
 # Prueba sobre una imagen (sin cámara), guarda anotada:
 python detect_camera.py --input testdata/parrot.jpg --output /tmp/out.jpg
+python detect_camera.py --faces --input testdata/grace_hopper.bmp --output /tmp/face.jpg
 ```
 
 Requiere el modelo COCO (en `testdata/`) y `opencv-python` (en `requirements.txt`).
