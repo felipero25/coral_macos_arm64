@@ -3,3 +3,5 @@
 ai-edge-litert==2.1.6
 pillow==12.3.0
 numpy==2.5.1
+# Solo para el ejemplo de detección con cámara (detect_camera.py):
+opencv-python==5.0.0.93

@@ -80,6 +80,24 @@ Si todas las inferencias tardan igual, está corriendo en CPU (no cuenta).
 > `sudo cp dist/libedgetpu.1.0.dylib /usr/local/lib/ && sudo ln -sf libedgetpu.1.0.dylib /usr/local/lib/libedgetpu.1.dylib`
 > y pasa `--delegate /usr/local/lib/libedgetpu.1.dylib`.
 
+## Ejemplo: detección de objetos con la cámara
+
+`detect_camera.py` hace detección de objetos en tiempo real (SSD MobileNet v2
+COCO) sobre el Edge TPU y la webcam.
+
+```bash
+# En vivo (pulsa 'q' para salir):
+python detect_camera.py
+
+# Prueba sobre una imagen (sin cámara), guarda anotada:
+python detect_camera.py --input testdata/parrot.jpg --output /tmp/out.jpg
+```
+
+Requiere el modelo COCO (en `testdata/`) y `opencv-python` (en `requirements.txt`).
+En **macOS**, la primera vez debes dar **permiso de cámara a tu terminal** en
+*Ajustes del sistema → Privacidad y seguridad → Cámara* y reiniciar la terminal.
+Muestra ms de inferencia y FPS en la ventana.
+
 ## Compilar desde fuente
 
 ```bash
@@ -107,8 +125,9 @@ Salida en `dist/`.
 ## Estructura
 
 ```
-run_edgetpu.py              Inferencia en el TPU (Plan B, load_delegate)
-requirements.txt            ai-edge-litert, pillow, numpy (cp312 arm64)
+run_edgetpu.py              Clasificación en el TPU (Plan B, load_delegate)
+detect_camera.py            Detección de objetos en vivo (cámara + Edge TPU)
+requirements.txt            ai-edge-litert, pillow, numpy, opencv (cp312 arm64)
 patches/Makefile.macos      Makefile adaptado a macOS/ld64 (build USB-only)
 scripts/build_libedgetpu.sh Build reproducible de libedgetpu
 dist/                       (no versionado) aquí va el .dylib del Release o del build
