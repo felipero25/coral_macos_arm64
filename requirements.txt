@@ -1,0 +1,5 @@
+# Fase 2 — intérprete TFLite + preprocesado (Python 3.12 arm64)
+# Instalar en un venv 3.12: python3.12 -m venv .venv && source .venv/bin/activate
+ai-edge-litert==2.1.6
+pillow==12.3.0
+numpy==2.5.1

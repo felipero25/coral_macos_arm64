@@ -1,0 +1,212 @@
+# Make uses /bin/sh by default, which is incompatible with the bashisms seen
+# below.
+SHELL := /bin/bash
+
+ifeq ($(origin MAKEFILE_DIR), undefined)
+	MAKEFILE_DIR := $(shell dirname $(realpath $(lastword $(MAKEFILE_LIST))))
+endif
+
+BUILDROOT ?= $(MAKEFILE_DIR)/..
+BUILDDIR := $(BUILDROOT)/out
+TOBUILDDIR = $(addprefix $(BUILDDIR)/,$(1))
+MKDIR = if [ ! -d $(dir $@) ]; then mkdir -p $(dir $@); fi
+# ---- macOS arm64 (Apple Silicon) adaptation ----
+# Homebrew prefix (override with BREW=... if needed)
+BREW ?= /opt/homebrew
+# flatbuffers 24.3.25 built from source (Homebrew ships v25, incompatible with
+# the schema_generated.h checked into TF 2.19.1 which static_asserts ==24.3.25).
+# FB include must precede BREW so its headers win.
+FB ?= /Users/feliperoanarvaez/Documents/dev/python/coral/deps/fb24
+CC=clang
+CXX=clang++
+FLATC=$(FB)/bin/flatc
+
+# abseil has a dense dependency graph; link every installed libabsl_* (dylibs,
+# link order is irrelevant on macOS). Picks only the unversioned symlink names.
+ABSL_LIBS := $(shell ls $(BREW)/lib/libabsl_*.dylib 2>/dev/null | sed -E 's|.*/lib(absl_[a-z0-9_]+)\.dylib$$|-l\1|' | grep '^-l' | sort -u)
+
+LIBEDGETPU_CFLAGS := \
+	-fPIC \
+	-Wall \
+	-std=c99 \
+	-arch arm64 \
+	-I$(FB)/include \
+	-I$(BREW)/include
+
+LIBEDGETPU_CXXFLAGS := \
+	-fPIC \
+	-Wall \
+	-std=c++17 \
+	-arch arm64 \
+	-DDARWINN_PORT_DEFAULT \
+	-I$(FB)/include \
+	-I$(BREW)/include \
+	-Wno-deprecated-declarations
+
+# ld64 (Apple linker) equivalents. Dropped GNU-only flags:
+#   -Wl,-Map / --soname / --version-script / -fuse-ld=gold  (unsupported by ld64)
+# install_name is the leaf so dlopen("libedgetpu.1.dylib") resolves it.
+# -labsl_flags removed: split/renamed away in modern abseil.
+LIBEDGETPU_LDFLAGS := \
+	-dynamiclib \
+	-arch arm64 \
+	-install_name @rpath/libedgetpu.1.dylib \
+	-L$(BREW)/lib \
+	$(FB)/lib/libflatbuffers.a \
+	$(ABSL_LIBS) \
+	-lusb-1.0
+
+LIBEDGETPU_FLATC_SRCS := \
+	$(BUILDROOT)/executable/executable.fbs \
+	$(BUILDROOT)/api/driver_options.fbs
+LIBEDGETPU_FLATC_OBJS := $(call TOBUILDDIR,$(patsubst %.fbs,%_generated.h,$(LIBEDGETPU_FLATC_SRCS)))
+
+LIBEDGETPU_FW_SRCS := \
+	$(BUILDROOT)/driver/usb/apex_latest_single_ep.bin \
+	$(BUILDROOT)/driver/usb/apex_latest_multi_ep.bin
+LIBEDGETPU_FW_OUTPUT := $(call TOBUILDDIR, $(BUILDROOT)/driver/usb/usb_latest_firmware.h)
+
+LIBEDGETPU_INCLUDES := \
+	$(BUILDROOT) \
+	$(TFROOT) \
+	$(BUILDDIR) \
+	$(BUILDDIR)/$(BUILDROOT)
+LIBEDGETPU_INCLUDES := $(addprefix -I,$(LIBEDGETPU_INCLUDES))
+
+LIBEDGETPU_CSRCS := $(TFROOT)/tensorflow/lite/c/common_internal.cc
+LIBEDGETPU_COBJS := $(call TOBUILDDIR,$(patsubst %.c,%.o,$(LIBEDGETPU_CSRCS)))
+
+LIBEDGETPU_CCSRCS := \
+	$(BUILDROOT)/api/allocated_buffer.cc \
+	$(BUILDROOT)/api/buffer.cc \
+	$(BUILDROOT)/api/driver_options_helper.cc \
+	$(BUILDROOT)/api/layer_information.cc \
+	$(BUILDROOT)/api/tensor_util.cc \
+	$(BUILDROOT)/api/watchdog.cc \
+	$(BUILDROOT)/driver/aligned_allocator.cc \
+	$(BUILDROOT)/driver/allocator.cc \
+	$(BUILDROOT)/driver/beagle/beagle_top_level_handler.cc \
+	$(BUILDROOT)/driver/beagle/beagle_top_level_interrupt_manager.cc \
+	$(BUILDROOT)/driver/beagle/beagle_usb_driver_provider.cc \
+	$(BUILDROOT)/driver/device_buffer.cc \
+	$(BUILDROOT)/driver/device_buffer_mapper.cc \
+	$(BUILDROOT)/driver/dma_chunker.cc \
+	$(BUILDROOT)/driver/dma_info.cc \
+	$(BUILDROOT)/driver/dma_info_extractor.cc \
+	$(BUILDROOT)/driver/driver.cc \
+	$(BUILDROOT)/driver/driver_factory.cc \
+	$(BUILDROOT)/driver/driver_factory_default.cc \
+	$(BUILDROOT)/driver/executable_util.cc \
+	$(BUILDROOT)/driver/instruction_buffers.cc \
+	$(BUILDROOT)/driver/interrupt/grouped_interrupt_controller.cc \
+	$(BUILDROOT)/driver/interrupt/interrupt_controller.cc \
+	$(BUILDROOT)/driver/interrupt/top_level_interrupt_manager.cc \
+	$(BUILDROOT)/driver/memory/buddy_address_space.cc \
+	$(BUILDROOT)/driver/memory/buddy_allocator.cc \
+	$(BUILDROOT)/driver/memory/dual_address_space.cc \
+	$(BUILDROOT)/driver/memory/mmio_address_space.cc \
+	$(BUILDROOT)/driver/memory/mmu_mapper.cc \
+	$(BUILDROOT)/driver/memory/nop_address_space.cc \
+	$(BUILDROOT)/driver/mmio/coherent_allocator.cc \
+	$(BUILDROOT)/driver/mmio_driver.cc \
+	$(BUILDROOT)/driver/package_registry.cc \
+	$(BUILDROOT)/driver/package_verifier.cc \
+	$(BUILDROOT)/driver/real_time_dma_scheduler.cc \
+	$(BUILDROOT)/driver/registers/registers.cc \
+	$(BUILDROOT)/driver/request.cc \
+	$(BUILDROOT)/driver/run_controller.cc \
+	$(BUILDROOT)/driver/scalar_core_controller.cc \
+	$(BUILDROOT)/driver/single_queue_dma_scheduler.cc \
+	$(BUILDROOT)/driver/single_tpu_request.cc \
+	$(BUILDROOT)/driver/usb/libusb_options_default.cc \
+	$(BUILDROOT)/driver/usb/local_usb_device.cc \
+	$(BUILDROOT)/driver/usb/usb_dfu_commands.cc \
+	$(BUILDROOT)/driver/usb/usb_dfu_util.cc \
+	$(BUILDROOT)/driver/usb/usb_driver.cc \
+	$(BUILDROOT)/driver/usb/usb_io_request.cc \
+	$(BUILDROOT)/driver/usb/usb_ml_commands.cc \
+	$(BUILDROOT)/driver/usb/usb_registers.cc \
+	$(BUILDROOT)/driver/usb/usb_standard_commands.cc \
+	$(BUILDROOT)/driver_shared/time_stamper/driver_time_stamper.cc \
+	$(BUILDROOT)/port/blocking_counter.cc \
+	$(BUILDROOT)/port/default/port_from_tf/logging.cc \
+	$(BUILDROOT)/port/default/port_from_tf/status.cc \
+	$(BUILDROOT)/port/default/port_from_tf/statusor.cc \
+	$(BUILDROOT)/port/default/stringprintf.cc \
+	$(BUILDROOT)/port/shared_mutex.cc \
+	$(BUILDROOT)/port/timer_portable.cc \
+	$(BUILDROOT)/tflite/custom_op.cc \
+	$(BUILDROOT)/tflite/custom_op_data.cc \
+	$(BUILDROOT)/tflite/custom_op_direct.cc \
+	$(BUILDROOT)/tflite/custom_op_user_data_direct.cc \
+	$(BUILDROOT)/tflite/edgetpu_c.cc \
+	$(BUILDROOT)/tflite/edgetpu_delegate_for_custom_op.cc \
+	$(BUILDROOT)/tflite/edgetpu_delegate_for_custom_op_tflite_plugin.cc \
+	$(TFROOT)/tensorflow/lite/core/c/common.cc \
+	$(TFROOT)/tensorflow/lite/util.cc \
+	$(TFROOT)/tensorflow/lite/array.cc
+LIBEDGETPU_CCOBJS := $(call TOBUILDDIR,$(patsubst %.cc,%.o,$(LIBEDGETPU_CCSRCS)))
+
+# In order to support direct and throttled mode - we need to compile two files
+# twice (changing -DTHROTTLE_EDGE_TPU).
+LIBEDGETPU_MAX_CCSRCS := \
+	$(BUILDROOT)/tflite/edgetpu_context_direct.cc \
+	$(BUILDROOT)/tflite/edgetpu_manager_direct.cc
+LIBEDGETPU_MAX_CCOBJS := $(call TOBUILDDIR,$(patsubst %.cc,%.o,$(LIBEDGETPU_MAX_CCSRCS)))
+
+LIBEDGETPU_STD_CCSRCS := \
+	$(BUILDROOT)/tflite/edgetpu_context_direct.cc \
+	$(BUILDROOT)/tflite/edgetpu_manager_direct.cc
+LIBEDGETPU_STD_CCOBJS := $(call TOBUILDDIR,$(patsubst %.cc,%-throttled.o,$(LIBEDGETPU_STD_CCSRCS)))
+
+.PHONY: libedgetpu
+
+all: libedgetpu libedgetpu-throttled
+
+clean:
+	rm -rf $(BUILDDIR)
+
+$(LIBEDGETPU_FLATC_OBJS) : $(BUILDDIR)/%_generated.h: %.fbs
+	@$(MKDIR)
+	@$(FLATC) --cpp --gen-object-api --force-empty --gen-mutable -o $(dir $@) $<
+
+firmware:
+	@mkdir -p $(dir $(LIBEDGETPU_FW_OUTPUT))
+	@echo "namespace {" > $(LIBEDGETPU_FW_OUTPUT)
+	@for FILE in $(LIBEDGETPU_FW_SRCS); do \
+	  FILENAME=$${FILE##*/} ; \
+	  FILEBASE=$${FILENAME%.*} ; \
+	  echo "const unsigned char ""$$FILEBASE"" [] = {" >> $(LIBEDGETPU_FW_OUTPUT) ; \
+	  xxd -i < "$$FILE" >> $(LIBEDGETPU_FW_OUTPUT) ; \
+	  echo "};" >> $(LIBEDGETPU_FW_OUTPUT) ; \
+	  echo "constexpr unsigned int ""$$FILEBASE""_len = sizeof(""$$FILEBASE"")/sizeof(unsigned char);" >> $(LIBEDGETPU_FW_OUTPUT) ; \
+	  echo "" >> $(LIBEDGETPU_FW_OUTPUT) ; \
+	done
+	@echo "} // namespace" >> $(LIBEDGETPU_FW_OUTPUT)
+
+$(LIBEDGETPU_CCOBJS) : $(BUILDDIR)/%.o: %.cc
+	@$(MKDIR)
+	@echo "Compiling $<"
+	@$(CXX) $(LIBEDGETPU_CXXFLAGS) $(LIBEDGETPU_INCLUDES) -c $< -MD -MT $@ -MF $(@:%o=%d) -o $@
+
+$(LIBEDGETPU_MAX_CCOBJS) : $(BUILDDIR)/%.o: %.cc
+	@$(MKDIR)
+	@echo "Compiling $<"
+	@$(CXX) $(LIBEDGETPU_CXXFLAGS) $(LIBEDGETPU_INCLUDES) -c $< -MD -MT $@ -MF $(@:%o=%d) -o $@
+
+$(LIBEDGETPU_STD_CCOBJS) : $(BUILDDIR)/%-throttled.o: %.cc
+	@$(MKDIR)
+	@echo "Compiling $<"
+	@$(CXX) -DTHROTTLE_EDGE_TPU $(LIBEDGETPU_CXXFLAGS) $(LIBEDGETPU_INCLUDES) -c $< -MD -MT $@ -MF $(@:%o=%d) -o $@
+
+libedgetpu: | firmware $(LIBEDGETPU_FLATC_OBJS) $(LIBEDGETPU_CCOBJS) $(LIBEDGETPU_MAX_CCOBJS)
+	@mkdir -p $(BUILDDIR)/direct/darwin_arm64
+	@echo "Building libedgetpu.1.0.dylib (direct)"
+	@$(CXX) $(LIBEDGETPU_CCFLAGS) $(LIBEDGETPU_LDFLAGS) ${LDFLAGS} $(LIBEDGETPU_CCOBJS) $(LIBEDGETPU_MAX_CCOBJS) -o $(BUILDDIR)/direct/darwin_arm64/libedgetpu.1.0.dylib
+	@ln -sf libedgetpu.1.0.dylib $(BUILDDIR)/direct/darwin_arm64/libedgetpu.1.dylib
+
+libedgetpu-throttled: | firmware $(LIBEDGETPU_FLATC_OBJS) $(LIBEDGETPU_CCOBJS) $(LIBEDGETPU_STD_CCOBJS)
+	@mkdir -p $(BUILDDIR)/throttled/darwin_arm64
+	@echo "Building libedgetpu.1.0.dylib (throttled)"
+	@$(CXX) $(LIBEDGETPU_CCFLAGS) $(LIBEDGETPU_LDFLAGS) ${LDFLAGS} $(LIBEDGETPU_CCOBJS) $(LIBEDGETPU_STD_CCOBJS) -o $(BUILDDIR)/throttled/darwin_arm64/libedgetpu.1.0.dylib
+	@ln -sf libedgetpu.1.0.dylib $(BUILDDIR)/throttled/darwin_arm64/libedgetpu.1.dylib
