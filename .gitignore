@@ -1,0 +1,25 @@
+# --- Clones de terceros (regenerables con scripts/build_libedgetpu.sh) ---
+/tensorflow/
+/libedgetpu/
+/libcoral/
+/flatbuffers/
+/pycoral/
+/deps/
+
+# --- Entorno Python ---
+/.venv/
+__pycache__/
+*.pyc
+
+# --- Caché / salidas de build ---
+bazel-*
+*.o
+*.d
+
+# --- macOS ---
+.DS_Store
+
+# --- Instrucciones internas (no publicar) ---
+/CLAUDE.md
+
+# NOTA: dist/ y testdata/ SÍ se versionan (binario + datos de prueba).
