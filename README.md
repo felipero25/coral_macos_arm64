@@ -102,6 +102,39 @@ En **macOS**, la primera vez debes dar **permiso de cámara a tu terminal** en
 *Ajustes del sistema → Privacidad y seguridad → Cámara* y reiniciar la terminal.
 Muestra ms de inferencia y FPS en la ventana.
 
+### Otros modelos de detección (mismo script, cambia `--model`)
+```bash
+# EfficientDet-Lite0: más preciso que SSD (más lento, ~parte en CPU)
+python detect_camera.py --model testdata/efficientdet_lite0_320_ptq_edgetpu.tflite --labels testdata/coco_labels.txt
+# MobileDet: rápido y preciso para COCO
+python detect_camera.py --model testdata/ssdlite_mobiledet_coco_qat_postprocess_edgetpu.tflite --labels testdata/coco_labels.txt
+```
+
+## Ejemplo: pose / esqueleto (MoveNet)
+
+`pose_camera.py` — 17 keypoints de una persona en tiempo real (~30 ms/frame TPU).
+```bash
+python pose_camera.py                                  # cámara en vivo
+python pose_camera.py --input foto.jpg --output /tmp/pose.jpg
+```
+
+## Ejemplo: segmentación semántica (DeepLabV3)
+
+`segment_camera.py` — máscara de color por píxel (Pascal VOC, 21 clases).
+```bash
+python segment_camera.py                               # cámara en vivo
+python segment_camera.py --input foto.jpg --output /tmp/seg.jpg
+```
+
+## Clasificación general (1000 clases ImageNet)
+
+`run_edgetpu.py` con EfficientNet (reconoce objetos genéricos, ~17 ms/frame):
+```bash
+python run_edgetpu.py \
+  --model testdata/efficientnet-edgetpu-S_quant_edgetpu.tflite \
+  --labels testdata/imagenet_labels.txt --input testdata/parrot.jpg
+```
+
 ## Compilar desde fuente
 
 ```bash
@@ -130,7 +163,9 @@ Salida en `dist/`.
 
 ```
 run_edgetpu.py              Clasificación en el TPU (Plan B, load_delegate)
-detect_camera.py            Detección de objetos en vivo (cámara + Edge TPU)
+detect_camera.py            Detección de objetos/caras en vivo (cámara + Edge TPU)
+pose_camera.py              Pose/esqueleto en vivo (MoveNet)
+segment_camera.py           Segmentación semántica en vivo (DeepLabV3)
 requirements.txt            ai-edge-litert, pillow, numpy, opencv (cp312 arm64)
 patches/Makefile.macos      Makefile adaptado a macOS/ld64 (build USB-only)
 scripts/build_libedgetpu.sh Build reproducible de libedgetpu
